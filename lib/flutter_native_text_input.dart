@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -269,21 +270,21 @@ class _NativeTextInputState extends State<NativeTextInput> {
   final Completer<MethodChannel> _channel = Completer();
 
   TextEditingController? _controller;
-  TextEditingController get _effectiveController =>
-      widget.controller ?? (_controller ??= TextEditingController());
+  TextEditingController get _effectiveController => widget.controller ?? (_controller ??= TextEditingController());
 
   FocusNode? _focusNode;
-  FocusNode get _effectiveFocusNode =>
-      widget.focusNode ?? (_focusNode ??= FocusNode());
+  FocusNode get _effectiveFocusNode => widget.focusNode ?? (_focusNode ??= FocusNode());
 
   bool get _isMultiline => widget.maxLines == 0 || widget.maxLines > 1;
   double _lineHeight = 22.0;
   double _contentHeight = 22.0;
+  bool _isTextInitialized = false;
 
   @override
   void initState() {
     super.initState();
 
+    _isTextInitialized = widget.controller?.text.isNotEmpty ?? false;
     _effectiveFocusNode.addListener(_focusNodeListener);
     widget.controller?.addListener(_controllerListener);
   }
@@ -308,10 +309,15 @@ class _NativeTextInputState extends State<NativeTextInput> {
 
   Future<void> _controllerListener() async {
     final MethodChannel channel = await _channel.future;
-    channel.invokeMethod(
-      "setText",
-      {"text": widget.controller?.text ?? ''},
-    );
+    if (!_isTextInitialized || Platform.isIOS) {
+      channel.invokeMethod(
+        "setText",
+        {"text": widget.controller?.text ?? ''},
+      );
+
+      _isTextInitialized = true;
+    }
+
     channel.invokeMethod("getContentHeight").then((value) {
       if (value != null && value != _contentHeight) {
         setState(() {
@@ -391,9 +397,7 @@ class _NativeTextInputState extends State<NativeTextInput> {
   }
 
   void _createMethodChannel(int nativeViewId) {
-    MethodChannel channel =
-        MethodChannel("flutter_native_text_input$nativeViewId")
-          ..setMethodCallHandler(_onMethodCall);
+    MethodChannel channel = MethodChannel("flutter_native_text_input$nativeViewId")..setMethodCallHandler(_onMethodCall);
     channel.invokeMethod("getLineHeight").then((value) {
       if (value != null) {
         setState(() {
@@ -460,29 +464,24 @@ class _NativeTextInputState extends State<NativeTextInput> {
       };
     }
 
-    if (widget.iosOptions?.placeholderStyle != null &&
-        widget.iosOptions?.placeholderStyle?.fontSize != null) {
+    if (widget.iosOptions?.placeholderStyle != null && widget.iosOptions?.placeholderStyle?.fontSize != null) {
       params = {
         ...params,
         "placeholderFontSize": widget.iosOptions?.placeholderStyle?.fontSize,
       };
     }
 
-    if (widget.iosOptions?.placeholderStyle != null &&
-        widget.iosOptions?.placeholderStyle?.fontWeight != null) {
+    if (widget.iosOptions?.placeholderStyle != null && widget.iosOptions?.placeholderStyle?.fontWeight != null) {
       params = {
         ...params,
-        "placeholderFontWeight":
-            widget.iosOptions?.placeholderStyle?.fontWeight.toString(),
+        "placeholderFontWeight": widget.iosOptions?.placeholderStyle?.fontWeight.toString(),
       };
     }
 
-    if (widget.iosOptions?.placeholderStyle != null &&
-        widget.iosOptions?.placeholderStyle?.fontFamily != null) {
+    if (widget.iosOptions?.placeholderStyle != null && widget.iosOptions?.placeholderStyle?.fontFamily != null) {
       params = {
         ...params,
-        "placeholderFontFamily":
-        widget.iosOptions?.placeholderStyle?.fontFamily.toString(),
+        "placeholderFontFamily": widget.iosOptions?.placeholderStyle?.fontFamily.toString(),
       };
     }
 
@@ -548,12 +547,10 @@ class _NativeTextInputState extends State<NativeTextInput> {
         _singleTapRecognized();
     }
 
-    throw MissingPluginException(
-        "NativeTextInput._onMethodCall: No handler for ${call.method}");
+    throw MissingPluginException("NativeTextInput._onMethodCall: No handler for ${call.method}");
   }
 
-  double get _minHeight =>
-      (widget.minLines * _lineHeight) + widget.minHeightPadding;
+  double get _minHeight => (widget.minLines * _lineHeight) + widget.minHeightPadding;
 
   double get _maxHeight {
     if (!_isMultiline) return _minHeight;
@@ -593,6 +590,7 @@ class _NativeTextInputState extends State<NativeTextInput> {
   void _inputValueChanged(String? text, int? lineIndex) async {
     if (text != null) {
       _effectiveController.text = text;
+
       if (widget.onChanged != null) widget.onChanged!(text);
 
       final channel = await _channel.future;
